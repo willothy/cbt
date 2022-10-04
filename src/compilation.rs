@@ -18,6 +18,7 @@ pub fn compile(file: &SourceFile, config: &Config) -> anyhow::Result<PathBuf> {
 
     let out_file = file.out_path.with_extension(out_extension);
     println!("Compiling {} to {}", file.name, out_file.display());
+
     // Spawn compiler process
     let compiler_process = Command::new(compiler)
         .arg(&file.path)
@@ -69,7 +70,7 @@ pub fn link_object_files(
         .arg(&out_file)
         .args(&config.flags.ldflags)
         .spawn()
-        .expect("Failed to link object files");
+        .with_context(|| "Failed to link object files")?;
 
     let output = child.wait_with_output().with_context(|| {
         format!(
@@ -103,7 +104,7 @@ pub fn create_executable(
                 .map(|dir| format!("{}{}", &config.includes.include_prefix, dir)),
         )
         .spawn()
-        .expect("Failed to compile object file");
+        .with_context(|| "Failed to compile object file")?;
 
     let output = child.wait_with_output().with_context(|| {
         format!(
