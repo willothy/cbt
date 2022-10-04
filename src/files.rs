@@ -1,6 +1,6 @@
 use std::{
     env, fs,
-    io::{self, ErrorKind},
+    io::{self, Error, ErrorKind},
     path::PathBuf,
 };
 
@@ -27,11 +27,12 @@ pub fn copy_dir_structure(from: &PathBuf, to: &PathBuf, config: &Config) -> io::
         let filename = path.file_name();
         if let Some(filename) = filename {
             if path.is_dir() {
-                if config
-                    .exclude
-                    .dirs
-                    .contains(&filename.to_str().unwrap().to_owned())
-                {
+                if config.exclude.dirs.contains(
+                    &filename
+                        .to_str()
+                        .ok_or(Error::new(ErrorKind::Other, "Could not read filename."))?
+                        .to_owned(),
+                ) {
                     continue;
                 }
                 let new_dir = to.join(filename);
@@ -63,13 +64,16 @@ pub fn get_src_files(src_dir: &PathBuf, config: &Config) -> io::Result<Vec<Sourc
     for entry in fs::read_dir(src_dir)? {
         let entry = entry?;
         let path = entry.path();
-        let filename = path.file_name().unwrap();
+        let filename = path
+            .file_name()
+            .ok_or(Error::new(ErrorKind::Other, "Could not read filename."))?;
         if path.is_dir() {
-            if config
-                .exclude
-                .dirs
-                .contains(&filename.to_str().unwrap().to_owned())
-            {
+            if config.exclude.dirs.contains(
+                &filename
+                    .to_str()
+                    .ok_or(Error::new(ErrorKind::Other, "Could not read filename."))?
+                    .to_owned(),
+            ) {
                 continue;
             }
             src_files.extend(get_src_files(&path, config)?);
