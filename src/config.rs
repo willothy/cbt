@@ -7,6 +7,7 @@ pub struct Config {
     pub compilers: Compilers,
     pub flags: Flags,
     pub includes: Includes,
+    pub exclude: Exclude,
     pub source: Source,
     pub build: Build,
 }
@@ -32,6 +33,12 @@ pub struct Includes {
 }
 
 #[derive(Deserialize)]
+pub struct Exclude {
+    pub dirs: Vec<String>,
+    pub files: Vec<String>,
+}
+
+#[derive(Deserialize)]
 pub struct Source {
     pub source_dir: String,
 }
@@ -39,7 +46,8 @@ pub struct Source {
 #[derive(Deserialize)]
 pub struct Build {
     pub build_dir: String,
-    pub executable_name: Option<String>,
+    pub executable: Option<String>,
+    pub build_executable: bool,
 }
 
 pub fn load_config(config_file: String) -> io::Result<Config> {
