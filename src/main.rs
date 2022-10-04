@@ -1,138 +1,15 @@
-use serde_derive::Deserialize;
 use std::{
-    env, fs,
     io::{self, ErrorKind},
     path::PathBuf,
     process::{Command, ExitCode, Output},
 };
 
-#[derive(Deserialize)]
-struct Config {
-    compilers: Compilers,
-    flags: Flags,
-    includes: Includes,
-    source: Source,
-    build: Build,
-}
+use self::{config::*, files::*};
 
-#[derive(Deserialize)]
-struct Compilers {
-    cc: String,
-    cxx: String,
-    linker: String,
-}
-
-#[derive(Deserialize)]
-struct Flags {
-    cflags: Vec<String>,
-    cxxflags: Vec<String>,
-    ldflags: Vec<String>,
-}
-
-#[derive(Deserialize)]
-struct Includes {
-    include_dirs: Vec<String>,
-    include_prefix: String,
-}
-
-#[derive(Deserialize)]
-struct Source {
-    source_dir: String,
-}
-
-#[derive(Deserialize)]
-struct Build {
-    build_dir: String,
-    executable_name: Option<String>,
-}
-
-struct SourceFile {
-    path: PathBuf,
-    name: String,
-    lang: Language,
-}
-
-enum Language {
-    C,
-    CXX,
-}
+mod config;
+mod files;
 
 const CONFIG_FILENAME: &str = "test.toml";
-
-fn copy_dir_structure(from: &PathBuf, to: &PathBuf) -> io::Result<()> {
-    for entry in fs::read_dir(&from)? {
-        let entry = entry?;
-        let path = entry.path();
-        let filename = path.file_name();
-        if let Some(filename) = filename {
-            if path.is_dir() {
-                let new_dir = to.join(filename);
-                fs::create_dir_all(new_dir)?;
-                copy_dir_structure(&path, to)?;
-            }
-        } else {
-            continue;
-        }
-    }
-    Ok(())
-}
-
-fn load_config() -> io::Result<Config> {
-    let config_path = PathBuf::from(CONFIG_FILENAME);
-    let config = fs::read_to_string(config_path)?;
-    let config: Config = toml::from_str(&config)?;
-    Ok(config)
-}
-
-fn get_dirs(config: &Config) -> io::Result<(PathBuf, PathBuf)> {
-    let current_dir = env::current_dir()?;
-    let src_dir = current_dir.join(&config.source.source_dir);
-    let build_dir = current_dir.join(&config.build.build_dir);
-    Ok((src_dir, build_dir))
-}
-
-fn setup_build_dir(src_dir: &PathBuf, build_dir: &PathBuf) -> io::Result<()> {
-    fs::create_dir_all(&build_dir)?;
-    copy_dir_structure(&src_dir, &build_dir)?;
-    Ok(())
-}
-
-fn get_src_files(src_dir: &PathBuf, src_files: &mut Vec<SourceFile>) -> io::Result<()> {
-    for entry in fs::read_dir(src_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_dir() {
-            get_src_files(&path, src_files)?;
-        } else {
-            let filename = match path.file_name() {
-                Some(filename) => match filename.to_str() {
-                    Some(filename) => filename.to_owned(),
-                    None => "".to_owned(),
-                },
-                None => "".to_owned(),
-            };
-
-            match path.extension() {
-                Some(ext) => match ext.to_str() {
-                    Some("c") => src_files.push(SourceFile {
-                        path: path.clone(),
-                        name: filename,
-                        lang: Language::C,
-                    }),
-                    Some("cpp") => src_files.push(SourceFile {
-                        path: path.clone(),
-                        name: filename,
-                        lang: Language::CXX,
-                    }),
-                    Some(_) => continue,
-                    None => continue,
-                },
-                None => continue,
-            }
-        }
-    }
-    Ok(())
-}
 
 fn process_output(output: Output, filename: &String, action: &str) -> io::Result<()> {
     //println!("stdout: {}", String::from_utf8_lossy(&output.stdout));
@@ -284,7 +161,7 @@ fn create_executable(
 }
 
 fn run() -> io::Result<()> {
-    let config = load_config()?;
+    let config = load_config(CONFIG_FILENAME.to_owned())?;
 
     let (src_dir, build_dir) = get_dirs(&config)?;
 
