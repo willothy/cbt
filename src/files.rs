@@ -1,8 +1,6 @@
-use std::{
-    env, fs,
-    io::{self, Error, ErrorKind},
-    path::PathBuf,
-};
+use std::{env, fs, path::PathBuf};
+
+use anyhow::{anyhow, bail};
 
 use crate::config::Config;
 
@@ -18,9 +16,10 @@ pub struct SourceFile {
 pub enum Language {
     C,
     CXX,
+    ASM,
 }
 
-pub fn copy_dir_structure(from: &PathBuf, to: &PathBuf, config: &Config) -> io::Result<()> {
+pub fn copy_dir_structure(from: &PathBuf, to: &PathBuf, config: &Config) -> anyhow::Result<()> {
     for entry in fs::read_dir(&from)? {
         let entry = entry?;
         let path = entry.path();
@@ -30,7 +29,7 @@ pub fn copy_dir_structure(from: &PathBuf, to: &PathBuf, config: &Config) -> io::
                 if config.exclude.dirs.contains(
                     &filename
                         .to_str()
-                        .ok_or(Error::new(ErrorKind::Other, "Could not read filename."))?
+                        .ok_or(anyhow!("Could not read filename"))?
                         .to_owned(),
                 ) {
                     continue;
@@ -46,32 +45,34 @@ pub fn copy_dir_structure(from: &PathBuf, to: &PathBuf, config: &Config) -> io::
     Ok(())
 }
 
-pub fn get_dirs(config: &Config) -> io::Result<(PathBuf, PathBuf)> {
+pub fn get_dirs(config: &Config) -> anyhow::Result<(PathBuf, PathBuf)> {
     let current_dir = env::current_dir()?;
     let src_dir = current_dir.join(&config.source.source_dir);
     let build_dir = current_dir.join(&config.build.build_dir);
     Ok((src_dir, build_dir))
 }
 
-pub fn setup_build_dir(src_dir: &PathBuf, build_dir: &PathBuf, config: &Config) -> io::Result<()> {
+pub fn setup_build_dir(
+    src_dir: &PathBuf,
+    build_dir: &PathBuf,
+    config: &Config,
+) -> anyhow::Result<()> {
     fs::create_dir_all(&build_dir)?;
     copy_dir_structure(&src_dir, &build_dir, config)?;
     Ok(())
 }
 
-pub fn get_src_files(src_dir: &PathBuf, config: &Config) -> io::Result<Vec<SourceFile>> {
+pub fn get_src_files(src_dir: &PathBuf, config: &Config) -> anyhow::Result<Vec<SourceFile>> {
     let mut src_files = Vec::new();
     for entry in fs::read_dir(src_dir)? {
         let entry = entry?;
         let path = entry.path();
-        let filename = path
-            .file_name()
-            .ok_or(Error::new(ErrorKind::Other, "Could not read filename."))?;
+        let filename = path.file_name().ok_or(anyhow!("Could not read filename"))?;
         if path.is_dir() {
             if config.exclude.dirs.contains(
                 &filename
                     .to_str()
-                    .ok_or(Error::new(ErrorKind::Other, "Could not read filename."))?
+                    .ok_or(anyhow!("Could not convert filename to str"))?
                     .to_owned(),
             ) {
                 continue;
@@ -81,9 +82,9 @@ pub fn get_src_files(src_dir: &PathBuf, config: &Config) -> io::Result<Vec<Sourc
             let filename = match path.file_name() {
                 Some(filename) => match filename.to_str() {
                     Some(filename) => filename.to_owned(),
-                    None => "".to_owned(),
+                    None => bail!("Could not convert filename to str"),
                 },
-                None => "".to_owned(),
+                None => bail!("Could not read filename"),
             };
 
             if config.exclude.files.contains(&filename) {
@@ -110,32 +111,35 @@ pub fn get_src_files(src_dir: &PathBuf, config: &Config) -> io::Result<Vec<Sourc
                 )
                 .canonicalize()?;
 
-            match path.extension() {
-                Some(ext) => match ext.to_str() {
+            if let Some(ext) = path.extension() {
+                match ext.to_ascii_lowercase().to_str() {
                     Some("c") => src_files.push(SourceFile {
-                        path: new_path.clone(),
-                        out_path: out_path.clone(),
+                        path: new_path,
+                        out_path,
                         name: filename,
                         lang: Language::C,
                     }),
                     Some("cpp") => src_files.push(SourceFile {
-                        path: new_path.clone(),
-                        out_path: out_path.clone(),
+                        path: new_path,
+                        out_path,
                         name: filename,
                         lang: Language::CXX,
                     }),
-                    Some(_) => continue,
-                    None => continue,
-                },
-                None => continue,
+                    Some("s" | "asm") => src_files.push(SourceFile {
+                        path: new_path,
+                        out_path,
+                        name: filename,
+                        lang: Language::ASM,
+                    }),
+                    _ => continue,
+                }
+            } else {
+                continue;
             }
         }
     }
     if src_files.len() == 0 {
-        return Err(io::Error::new(
-            ErrorKind::Other,
-            "No source files found in source directory",
-        ));
+        bail!("No source files found in source directory");
     }
     Ok(src_files)
 }

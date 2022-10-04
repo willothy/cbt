@@ -1,5 +1,6 @@
-use std::{fs, io, path::PathBuf};
+use std::{fs, path::PathBuf};
 
+use anyhow::Context;
 use serde_derive::Deserialize;
 
 #[derive(Deserialize)]
@@ -16,6 +17,7 @@ pub struct Config {
 pub struct Compilers {
     pub cc: String,
     pub cxx: String,
+    pub asm: String,
     pub linker: String,
 }
 
@@ -23,6 +25,7 @@ pub struct Compilers {
 pub struct Flags {
     pub cflags: Vec<String>,
     pub cxxflags: Vec<String>,
+    pub asmflags: Vec<String>,
     pub ldflags: Vec<String>,
 }
 
@@ -50,9 +53,11 @@ pub struct Build {
     pub build_executable: bool,
 }
 
-pub fn load_config(config_file: String) -> io::Result<Config> {
+pub fn load_config(config_file: String) -> anyhow::Result<Config> {
     let config_path = PathBuf::from(config_file);
-    let config = fs::read_to_string(config_path)?;
-    let config: Config = toml::from_str(&config)?;
+    let config = fs::read_to_string(&config_path)
+        .with_context(|| format!("Failed to read config file {}", &config_path.display()))?;
+    let config: Config = toml::from_str(&config)
+        .with_context(|| format!("Failed to parse config toml file from string"))?;
     Ok(config)
 }

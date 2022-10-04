@@ -1,12 +1,11 @@
-use std::{io, process::Output};
+use std::process::Output;
 
-pub fn process_output(output: Output, filename: &String, action: &str) -> io::Result<()> {
+use anyhow::bail;
+
+pub fn process_output(output: Output, filename: &String, action: &str) -> anyhow::Result<()> {
     if output.status.success() {
         Ok(())
     } else {
-        Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("Failed to {} {}", action, filename),
-        ))
+        bail!("Failed to {} {}", action, filename)
     }
 }

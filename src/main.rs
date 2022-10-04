@@ -1,4 +1,4 @@
-use std::{io, process::ExitCode};
+use std::process::ExitCode;
 
 use self::{
     compilation::{compile_src_files, create_executable, link_object_files},
@@ -13,7 +13,7 @@ mod util;
 
 const CONFIG_FILENAME: &str = "test.toml";
 
-fn run() -> io::Result<()> {
+fn run() -> anyhow::Result<()> {
     let config = load_config(CONFIG_FILENAME.to_owned())?;
 
     let (src_dir, build_dir) = get_dirs(&config)?;
@@ -45,7 +45,7 @@ fn main() -> ExitCode {
     match run() {
         Ok(_) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("Error: {}", e);
+            eprintln!("{:?}", e);
             ExitCode::FAILURE
         }
     }
