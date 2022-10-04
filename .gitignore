@@ -1,0 +1,6 @@
+/target
+/.vscode
+/build
+/c_src
+/include
+test.toml
