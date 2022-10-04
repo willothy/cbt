@@ -8,79 +8,30 @@ use crate::{
     util::process_output,
 };
 
-pub fn compile_c(file: &SourceFile, config: &Config) -> anyhow::Result<PathBuf> {
-    let out_file = file.out_path.with_extension("o");
+pub fn compile(file: &SourceFile, config: &Config) -> anyhow::Result<PathBuf> {
+    let (compiler, flags, out_extension) = match file.lang {
+        Language::C => (&config.compilers.cc, &config.flags.cflags, "o"),
+        Language::CXX => (&config.compilers.cxx, &config.flags.cxxflags, "o"),
+        Language::ASM => (&config.compilers.asm, &config.flags.asmflags, "asm.o"),
+        //_ => bail!("Unsupported language"),
+    };
+
+    let out_file = file.out_path.with_extension(out_extension);
     println!("Compiling {} to {}", file.name, out_file.display());
-    // Compile C file
-    let child = Command::new(&config.compilers.cc)
-        .arg("-c")
+    // Spawn compiler process
+    let compiler_process = Command::new(compiler)
         .arg(&file.path)
         .arg("-o")
         .arg(&out_file)
-        .args(&config.flags.cflags)
-        .args(
-            config
-                .includes
-                .include_dirs
-                .iter()
-                .map(|dir| format!("{}{}", &config.includes.include_prefix, dir)),
-        )
+        .args(flags)
         .spawn()
-        .with_context(|| format!("Failed to compile {}", &file.path.display()))?;
+        .with_context(|| format!("Failed to spawn {} process", compiler))?;
 
-    let output = child
+    let output = compiler_process
         .wait_with_output()
-        .with_context(|| format!("Failed to get {} output", &config.compilers.cc))?;
+        .with_context(|| format!("Failed to get {} output", compiler))?;
 
-    process_output(output, &file.name, "compile")?;
-    Ok(out_file)
-}
-
-pub fn compile_cxx(file: &SourceFile, config: &Config) -> anyhow::Result<PathBuf> {
-    let out_file = file.out_path.with_extension("o");
-    println!("Compiling {} to {}", file.name, out_file.display());
-    // Compile C++ file
-    let child = Command::new(&config.compilers.cxx)
-        .arg("-c")
-        .arg(&file.path)
-        .arg("-o")
-        .arg(&out_file)
-        .args(&config.flags.cxxflags)
-        .args(
-            config
-                .includes
-                .include_dirs
-                .iter()
-                .map(|dir| format!("{}{}", &config.includes.include_prefix, dir)),
-        )
-        .spawn()
-        .with_context(|| format!("Failed to compile {}", &file.path.display()))?;
-
-    let output = child
-        .wait_with_output()
-        .with_context(|| format!("Failed to get {} output", &config.compilers.cxx))?;
-
-    process_output(output, &file.name, "compile")?;
-    Ok(out_file)
-}
-
-pub fn compile_asm(file: &SourceFile, config: &Config) -> anyhow::Result<PathBuf> {
-    let out_file = file.out_path.with_extension("asm.o");
-    println!("Compiling {} to {}", file.name, out_file.display());
-    // Compile ASM file
-    let child = Command::new(&config.compilers.asm)
-        .arg(&file.path)
-        .arg("-o")
-        .arg(&out_file)
-        .args(&config.flags.asmflags)
-        .spawn()
-        .with_context(|| format!("Failed to compile {}", &file.path.display()))?;
-
-    let output = child
-        .wait_with_output()
-        .with_context(|| format!("Failed to get {} output", &config.compilers.asm))?;
-
-    process_output(output, &file.name, "compile")?;
+    process_output(output, compiler, &file.name, "compile")?;
     Ok(out_file)
 }
 
@@ -91,20 +42,8 @@ pub fn compile_src_files(
     let mut out_files = Vec::new();
 
     for file in src_files {
-        match file.lang {
-            Language::C => {
-                let out_file = compile_c(file, &config)?;
-                out_files.push(out_file);
-            }
-            Language::CXX => {
-                let out_file = compile_cxx(file, &config)?;
-                out_files.push(out_file);
-            }
-            Language::ASM => {
-                let out_file = compile_asm(file, &config)?;
-                out_files.push(out_file);
-            }
-        };
+        let out_file = compile(file, &config)?;
+        out_files.push(out_file);
     }
     if out_files.len() == 0 {
         bail!("No object files found in build directory");
@@ -138,7 +77,7 @@ pub fn link_object_files(
             &config.compilers.linker
         )
     })?;
-    process_output(output, &out_name, "link")?;
+    process_output(output, &config.compilers.linker, &out_name, "link")?;
     Ok(out_file)
 }
 
@@ -175,6 +114,7 @@ pub fn create_executable(
     })?;
     process_output(
         output,
+        &config.compilers.cc,
         &obj_file.display().to_string(),
         "create executable from",
     )?;

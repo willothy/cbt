@@ -2,12 +2,21 @@
 name = "cbt"
 version = "0.1.0"
 edition = "2021"
+authors = ["Will Hopkins <willothyh@gmail.com>"]
+license = "MIT OR Apache-2.0"
+description = "A simple build tool for C and C++"
+repository = "https://github.com/willothy/cbt"
+readme = "README.md"
+publish = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 anyhow = "1.0.65"
+clap = { version = "4.0.9", features = ["derive"] }
+clap_complete = "4.0.2"
 serde = "1.0.145"
 serde_derive = "1.0.145"
-thiserror = "1.0.37"
 toml = "0.5.9"
+
+
