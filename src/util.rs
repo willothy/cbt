@@ -1,5 +1,6 @@
 use std::process::Output;
 
+use crate::error;
 use anyhow::bail;
 
 pub fn process_output(
@@ -11,6 +12,6 @@ pub fn process_output(
     if output.status.success() {
         Ok(())
     } else {
-        bail!("{process} failed to {action} {filename}")
+        bail!(error!("{process} failed to {action} {filename}"))
     }
 }

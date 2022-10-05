@@ -7,6 +7,7 @@ mod commands;
 mod compilation;
 mod config;
 mod files;
+mod logging;
 mod util;
 
 pub fn run() -> anyhow::Result<()> {
@@ -23,7 +24,10 @@ fn main() -> ExitCode {
     let result: anyhow::Result<()> = run();
 
     match result {
-        Ok(_) => ExitCode::SUCCESS,
+        Ok(_) => {
+            println!("");
+            ExitCode::SUCCESS
+        }
         Err(e) => {
             eprintln!("{:?}", e);
             ExitCode::FAILURE

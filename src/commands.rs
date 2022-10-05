@@ -6,9 +6,9 @@ use clap_complete::generate;
 
 use crate::{
     cli::{Cli, Shell},
-    compilation::{compile_src_files, create_executable, link_object_files},
+    compilation::run_stage,
     config::{load_config, Config},
-    files::{get_dirs, get_src_files, setup_build_dir},
+    error,
 };
 
 pub fn build(config_path: Option<PathBuf>) -> anyhow::Result<()> {
@@ -19,27 +19,10 @@ pub fn build(config_path: Option<PathBuf>) -> anyhow::Result<()> {
     };
 
     let config = load_config(&config_path)?;
+    let compilers = &config.compilers;
 
-    let (src_dir, build_dir) = get_dirs(&config)?;
-
-    setup_build_dir(&src_dir, &build_dir, &config)?;
-
-    let src_files = get_src_files(&src_dir, &config)?;
-
-    let out_files = compile_src_files(&src_files, &config)?;
-
-    let obj_file = if out_files.len() > 1 {
-        link_object_files(&out_files, &build_dir, &config)?
-    } else {
-        out_files[0].clone()
-    };
-
-    if config.build.build_executable {
-        let executable_name = match &config.build.executable {
-            Some(name) => name,
-            None => "a.out",
-        };
-        create_executable(executable_name, &obj_file, &build_dir, &config)?;
+    for stage in &config.stages {
+        run_stage(compilers, stage)?;
     }
 
     Ok(())
@@ -53,10 +36,10 @@ pub fn gen_config(path: Option<PathBuf>) -> anyhow::Result<()> {
     };
 
     let config = Config::default();
-    let serialized =
-        toml::to_string_pretty(&config).with_context(|| "Failed to serialize default config")?;
+    let serialized = toml::to_string_pretty(&config)
+        .with_context(|| error!("Failed to serialize default config"))?;
 
-    std::fs::write(&path, serialized).with_context(|| "Failed to write config file")?;
+    std::fs::write(&path, serialized).with_context(|| error!("Failed to write config file"))?;
 
     Ok(())
 }

@@ -1,8 +1,7 @@
 use std::{env, fs, path::PathBuf};
 
-use anyhow::{anyhow, bail};
-
-use crate::config::Config;
+use crate::{config::Stage, error};
+use anyhow::bail;
 
 #[derive(Debug)]
 pub struct SourceFile {
@@ -19,82 +18,69 @@ pub enum Language {
     ASM,
 }
 
-pub fn copy_dir_structure(from: &PathBuf, to: &PathBuf, config: &Config) -> anyhow::Result<()> {
+pub fn copy_dir_structure(from: &PathBuf, to: &PathBuf, stage: &Stage) -> anyhow::Result<()> {
     for entry in fs::read_dir(&from)? {
         let entry = entry?;
         let path = entry.path();
         let filename = path.file_name();
         if let Some(filename) = filename {
             if path.is_dir() {
-                if config.exclude.dirs.contains(
-                    &filename
-                        .to_str()
-                        .ok_or(anyhow!("Could not read filename"))?
-                        .to_owned(),
-                ) {
+                if stage.exclude.dirs.contains(&path) {
                     continue;
                 }
                 let new_dir = to.join(filename);
                 fs::create_dir_all(new_dir)?;
-                copy_dir_structure(&path, to, config)?;
+                copy_dir_structure(&path, to, stage)?;
             }
-        } else {
-            continue;
         }
     }
     Ok(())
 }
 
-pub fn get_dirs(config: &Config) -> anyhow::Result<(PathBuf, PathBuf)> {
+pub fn get_dirs(stage: &Stage) -> anyhow::Result<(PathBuf, PathBuf)> {
     let current_dir = env::current_dir()?;
-    let src_dir = current_dir.join(&config.source.source_dir);
-    let build_dir = current_dir.join(&config.build.build_dir);
+    let src_dir = current_dir.join(&stage.source.source_dir);
+    let build_dir = current_dir.join(&stage.build.build_dir);
     Ok((src_dir, build_dir))
 }
 
 pub fn setup_build_dir(
     src_dir: &PathBuf,
     build_dir: &PathBuf,
-    config: &Config,
+    stage: &Stage,
 ) -> anyhow::Result<()> {
     fs::create_dir_all(&build_dir)?;
-    copy_dir_structure(&src_dir, &build_dir, config)?;
+    copy_dir_structure(&src_dir, &build_dir, stage)?;
     Ok(())
 }
 
-pub fn get_src_files(src_dir: &PathBuf, config: &Config) -> anyhow::Result<Vec<SourceFile>> {
+pub fn get_src_files(src_dir: &PathBuf, stage: &Stage) -> anyhow::Result<Vec<SourceFile>> {
     let mut src_files = Vec::new();
     for entry in fs::read_dir(src_dir)? {
         let entry = entry?;
         let path = entry.path();
-        let filename = path.file_name().ok_or(anyhow!("Could not read filename"))?;
         if path.is_dir() {
-            if config.exclude.dirs.contains(
-                &filename
-                    .to_str()
-                    .ok_or(anyhow!("Could not convert filename to str"))?
-                    .to_owned(),
-            ) {
+            if stage.exclude.dirs.contains(&path) {
                 continue;
             }
-            src_files.extend(get_src_files(&path, config)?);
+            src_files.extend(get_src_files(&path, stage)?);
         } else {
             let filename = match path.file_name() {
                 Some(filename) => match filename.to_str() {
                     Some(filename) => filename.to_owned(),
-                    None => bail!("Could not convert filename to str"),
+                    None => bail!(error!("Could not convert filename to str")),
                 },
-                None => bail!("Could not read filename"),
+                None => bail!(error!("Could not read filename")),
             };
 
-            if config.exclude.files.contains(&filename) {
+            if stage.exclude.files.contains(&path) {
                 continue;
             }
 
-            let src_dir_base = PathBuf::from(&config.source.source_dir).canonicalize()?;
+            let src_dir_base = PathBuf::from(&stage.source.source_dir).canonicalize()?;
             let new_path_components = path.components().skip(src_dir_base.components().count());
             let out_path = new_path_components.clone().fold(
-                PathBuf::from(&config.build.build_dir),
+                PathBuf::from(&stage.build.build_dir),
                 |mut path, comp| {
                     path.push(comp);
                     path
@@ -102,13 +88,10 @@ pub fn get_src_files(src_dir: &PathBuf, config: &Config) -> anyhow::Result<Vec<S
             );
             let new_path = new_path_components
                 .clone()
-                .fold(
-                    PathBuf::from(&config.source.source_dir),
-                    |mut path, comp| {
-                        path.push(comp);
-                        path
-                    },
-                )
+                .fold(PathBuf::from(&stage.source.source_dir), |mut path, comp| {
+                    path.push(comp);
+                    path
+                })
                 .canonicalize()?;
 
             if let Some(ext) = path.extension() {
@@ -139,7 +122,7 @@ pub fn get_src_files(src_dir: &PathBuf, config: &Config) -> anyhow::Result<Vec<S
         }
     }
     if src_files.len() == 0 {
-        bail!("No source files found in source directory");
+        bail!(error!("No source files found in source directory"));
     }
     Ok(src_files)
 }

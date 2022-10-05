@@ -1,0 +1,26 @@
+[compilers]
+cc = 'gcc'
+cxx = 'g++'
+asm = 'nasm'
+linker = 'ld'
+
+[[stage]]
+name = "test"
+
+[stage.flags]
+cflags = []
+cxxflags = []
+asmflags = ['-felf64']
+ldflags = ["-relocatable"]
+
+[stage.includes]
+include_dirs = ['include']
+include_prefix = '-I'
+
+[stage.source]
+source_dir = 'example/src'
+
+[stage.build]
+build_dir = 'example/build'
+executable = 'test_bin'
+build_executable = true
