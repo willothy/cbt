@@ -24,6 +24,7 @@ pub struct Stage {
     pub exclude: Exclude,
     pub source: Source,
     pub build: Build,
+    pub post_script: Option<String>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -72,7 +73,9 @@ pub struct Source {
 #[derive(Deserialize, Serialize)]
 pub struct Build {
     pub build_dir: PathBuf,
+    pub target_dir: Option<PathBuf>,
     pub executable: Option<String>,
+    pub executable_extra_flags: Option<Vec<String>>,
     pub build_executable: bool,
 }
 
@@ -80,7 +83,15 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             compilers: Default::default(),
-            stages: Default::default(),
+            stages: vec![Stage {
+                name: "default".to_string(),
+                source: Default::default(),
+                build: Default::default(),
+                exclude: Default::default(),
+                flags: Default::default(),
+                includes: Default::default(),
+                post_script: None,
+            }],
         }
     }
 }
@@ -94,6 +105,7 @@ impl Default for Stage {
             exclude: Default::default(),
             source: Default::default(),
             build: Default::default(),
+            post_script: None,
         }
     }
 }
@@ -150,7 +162,9 @@ impl Default for Build {
     fn default() -> Self {
         Self {
             build_dir: PathBuf::from("build"),
+            target_dir: None,
             executable: Some("default".to_owned()),
+            executable_extra_flags: None,
             build_executable: true,
         }
     }

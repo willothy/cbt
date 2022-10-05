@@ -1,6 +1,7 @@
 use std::{path::PathBuf, process::Command};
 
 use crate::{
+    bold,
     config::{Compilers, Stage},
     error,
     files::{get_dirs, get_src_files, setup_build_dir, Language, SourceFile},
@@ -8,6 +9,7 @@ use crate::{
     util::process_output,
 };
 use anyhow::{bail, Context};
+use run_script::ScriptOptions;
 
 pub fn compile(file: &SourceFile, compilers: &Compilers, stage: &Stage) -> anyhow::Result<PathBuf> {
     let (compiler, flags, out_extension) = match file.lang {
@@ -22,7 +24,7 @@ pub fn compile(file: &SourceFile, compilers: &Compilers, stage: &Stage) -> anyho
         println!(
             "{}: {} is up to date",
             info!("Skipping compile step"),
-            out_file.display()
+            bold!("{}", out_file.display())
         );
         return Ok(out_file);
     }
@@ -33,13 +35,30 @@ pub fn compile(file: &SourceFile, compilers: &Compilers, stage: &Stage) -> anyho
         out_file.display()
     );
 
+    let includes = match file.lang {
+        Language::C | Language::CXX => {
+            let mut includes = Vec::new();
+            for include in &stage.includes.include_dirs {
+                includes.push(format!("-I{}", include.display().to_string().trim()));
+            }
+            includes
+        }
+        _ => Vec::new(),
+    };
+
     // Spawn compiler process
-    let compiler_process = Command::new(compiler)
-        .arg("-c")
-        .arg(&file.path)
-        .arg("-o")
-        .arg(&out_file)
-        .args(flags)
+    let mut cmd = Command::new(compiler);
+    cmd.arg(match file.lang {
+        Language::ASM => "",
+        _ => "-c",
+    })
+    .arg(&file.path)
+    .arg("-o")
+    .arg(&out_file)
+    .args(includes)
+    .args(flags);
+    //println!("{:?}", cmd);
+    let compiler_process = cmd
         .spawn()
         .with_context(|| error!("Failed to spawn {} process", compiler))?;
 
@@ -78,6 +97,8 @@ pub fn link_object_files(
     };
     let out_file = build_dir.join(&out_name).with_extension("o");
 
+    println!("{} {}", message!("Linking objects to"), out_file.display());
+
     let mut up_to_date = false;
     for obj in obj_files {
         if is_up_to_date(&out_file, obj)? {
@@ -91,17 +112,21 @@ pub fn link_object_files(
         println!(
             "{}: {} is up to date",
             info!("Skipping link step"),
-            out_file.display()
+            bold!("{}", out_file.file_name().unwrap().to_str().unwrap())
         );
         return Ok(out_file);
     }
 
-    let child = Command::new(&compilers.linker)
-        .arg("-relocatable")
+    let mut cmd = Command::new(&compilers.linker);
+    cmd
+        //.arg("-relocatable")
         .args(obj_files)
         .arg("-o")
         .arg(&out_file)
-        .args(&stage.flags.ldflags)
+        .args(&stage.flags.ldflags);
+    //println!("{:?}", cmd);
+
+    let child = cmd
         .spawn()
         .with_context(|| error!("Failed to link object files"))?;
 
@@ -140,13 +165,22 @@ pub fn create_executable(
     stage: &Stage,
 ) -> anyhow::Result<()> {
     // Compile object file
-    let executable_path = build_dir.join(executable_name);
+    let executable_dir = if let Some(target_dir) = &stage.build.target_dir {
+        if target_dir.canonicalize()?.exists() {
+            target_dir
+        } else {
+            build_dir
+        }
+    } else {
+        build_dir
+    };
+    let executable_path = executable_dir.join(executable_name);
 
     if is_up_to_date(&executable_path, obj_file)? {
         println!(
             "{}: {} is up to date",
             info!("Skipping executable step"),
-            executable_path.display()
+            bold!("{}", executable_path.file_name().unwrap().to_str().unwrap())
         );
         return Ok(());
     }
@@ -156,18 +190,26 @@ pub fn create_executable(
         message!("Creating executable"),
         executable_path.display()
     );
-    let child = Command::new(&compilers.cc)
-        .arg(&obj_file)
+    let exe_flags = match stage.build.executable_extra_flags {
+        Some(ref flags) => {
+            let mut temp = stage.flags.cflags.clone();
+            temp.extend(flags.clone());
+            temp
+        }
+        None => stage.flags.cflags.clone(),
+    };
+    let mut includes = Vec::new();
+    for include in &stage.includes.include_dirs {
+        includes.push(format!("-I{}", include.display().to_string().trim()));
+    }
+    let mut cmd = Command::new(&compilers.cc);
+    cmd.arg(&obj_file)
         .arg("-o")
         .arg(&executable_path)
-        .args(&stage.flags.cflags)
-        .args(
-            stage
-                .includes
-                .include_dirs
-                .iter()
-                .map(|dir| format!("{}{}", &stage.includes.include_prefix, dir.display())),
-        )
+        .args(&exe_flags);
+    //println!("{:?}", cmd);
+    let child = cmd
+        //.args(includes)
         .spawn()
         .with_context(|| "Failed to compile object file")?;
 
@@ -182,7 +224,7 @@ pub fn create_executable(
         output,
         &compilers.cc,
         &obj_file.display().to_string(),
-        "create executable from",
+        format!("create executable {} from", executable_path.display()).as_str(),
     )?;
     Ok(())
 }
@@ -214,6 +256,18 @@ pub fn run_stage(compilers: &Compilers, stage: &Stage) -> anyhow::Result<()> {
             None => "a.out",
         };
         create_executable(executable_name, &obj_file, &build_dir, &compilers, &stage)?;
+    }
+
+    if let Some(post_script) = &stage.post_script {
+        let (_exit_code, output, error) =
+            run_script::run(post_script, &vec![], &ScriptOptions::new())
+                .with_context(|| error!("Failed to run post script for {}", stage.name))?;
+        if error.len() > 0 {
+            println!("{}", error);
+        }
+        if output.len() > 0 {
+            println!("{}", output);
+        }
     }
     message!("{} stage {}", message!("Finished"), stage.name);
     Ok(())

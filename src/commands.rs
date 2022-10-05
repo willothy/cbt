@@ -1,4 +1,8 @@
-use std::{fs, path::PathBuf};
+use std::{
+    env::{self, set_current_dir},
+    fs,
+    path::PathBuf,
+};
 
 use anyhow::Context;
 use clap::CommandFactory;
@@ -8,7 +12,7 @@ use crate::{
     cli::{Cli, Shell},
     compilation::run_stage,
     config::{load_config, Config},
-    error,
+    error, warning,
 };
 
 pub fn build(config_path: Option<PathBuf>) -> anyhow::Result<()> {
@@ -17,9 +21,26 @@ pub fn build(config_path: Option<PathBuf>) -> anyhow::Result<()> {
     } else {
         PathBuf::from("cbt.toml")
     };
-
+    let config_path = config_path.canonicalize().with_context(|| {
+        error!(
+            "Could not canonicalize config directory {}",
+            config_path.display()
+        )
+    })?;
     let config = load_config(&config_path)?;
     let compilers = &config.compilers;
+    let config_dir = match config_path.parent() {
+        Some(dir) => dir.to_path_buf(),
+        None => {
+            println!(
+                "{}: Could not get parent directory of config file, defaulting to current directory.",
+                warning!("Warning")
+            );
+            env::current_dir().with_context(|| "Could not get current directory")?
+        }
+    };
+
+    set_current_dir(config_dir).with_context(|| error!("{}", "Could not set current directory"))?;
 
     for stage in &config.stages {
         run_stage(compilers, stage)?;
@@ -35,7 +56,17 @@ pub fn gen_config(path: Option<PathBuf>) -> anyhow::Result<()> {
         PathBuf::from("cbt.toml")
     };
 
-    let config = Config::default();
+    let config = Config::default(); /* Config {
+                                        compilers: Default::default(),
+                                        stages: vec![Stage {
+                                            name: "default".to_string(),
+                                            source: Default::default(),
+                                            build: Default::default(),
+                                            exclude: Default::default(),
+                                            flags: Default::default(),
+                                            includes: Default::default(),
+                                        }],
+                                    }; */
     let serialized = toml::to_string_pretty(&config)
         .with_context(|| error!("Failed to serialize default config"))?;
 

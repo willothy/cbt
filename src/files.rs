@@ -18,21 +18,40 @@ pub enum Language {
     ASM,
 }
 
-pub fn copy_dir_structure(from: &PathBuf, to: &PathBuf, stage: &Stage) -> anyhow::Result<()> {
-    for entry in fs::read_dir(&from)? {
-        let entry = entry?;
-        let path = entry.path();
-        let filename = path.file_name();
-        if let Some(filename) = filename {
-            if path.is_dir() {
-                if stage.exclude.dirs.contains(&path) {
+fn walk_dir(dir: &PathBuf, stage: &Stage) -> anyhow::Result<Vec<PathBuf>> {
+    let mut paths = Vec::new();
+    for entry in fs::read_dir(dir)? {
+        if let Ok(entry) = entry {
+            if entry.path().is_dir() {
+                let mut exclude = false;
+                for exclude_dir in &stage.exclude.dirs {
+                    if entry.path().ends_with(exclude_dir) {
+                        exclude = true;
+                    }
+                }
+                if exclude {
                     continue;
                 }
-                let new_dir = to.join(filename);
-                fs::create_dir_all(new_dir)?;
-                copy_dir_structure(&path, to, stage)?;
+                paths.push(entry.path());
+                paths.extend(walk_dir(&entry.path(), stage)?);
             }
         }
+    }
+    Ok(paths)
+}
+
+pub fn copy_dir_structure(
+    from_root: &PathBuf,
+    to_root: &PathBuf,
+    stage: &Stage,
+) -> anyhow::Result<()> {
+    let paths = walk_dir(&from_root, stage)?;
+    for path in paths {
+        let p: PathBuf = path
+            .components()
+            .skip(from_root.components().count())
+            .collect();
+        fs::create_dir_all(to_root.join(p))?;
     }
     Ok(())
 }
@@ -49,8 +68,9 @@ pub fn setup_build_dir(
     build_dir: &PathBuf,
     stage: &Stage,
 ) -> anyhow::Result<()> {
-    fs::create_dir_all(&build_dir)?;
-    copy_dir_structure(&src_dir, &build_dir, stage)?;
+    let objects_dir = build_dir.join("objects");
+    fs::create_dir_all(&objects_dir)?;
+    copy_dir_structure(&src_dir, &objects_dir, stage)?;
     Ok(())
 }
 
@@ -60,7 +80,14 @@ pub fn get_src_files(src_dir: &PathBuf, stage: &Stage) -> anyhow::Result<Vec<Sou
         let entry = entry?;
         let path = entry.path();
         if path.is_dir() {
-            if stage.exclude.dirs.contains(&path) {
+            let mut exclude = false;
+            for exclude_dir in &stage.exclude.dirs {
+                if exclude_dir.canonicalize()? == path.canonicalize()? {
+                    exclude = true;
+                    break;
+                }
+            }
+            if exclude {
                 continue;
             }
             src_files.extend(get_src_files(&path, stage)?);
@@ -73,14 +100,21 @@ pub fn get_src_files(src_dir: &PathBuf, stage: &Stage) -> anyhow::Result<Vec<Sou
                 None => bail!(error!("Could not read filename")),
             };
 
-            if stage.exclude.files.contains(&path) {
+            let mut exclude = false;
+            for exclude_file in &stage.exclude.files {
+                if exclude_file.canonicalize()? == path.canonicalize()? {
+                    exclude = true;
+                    break;
+                }
+            }
+            if exclude {
                 continue;
             }
 
             let src_dir_base = PathBuf::from(&stage.source.source_dir).canonicalize()?;
             let new_path_components = path.components().skip(src_dir_base.components().count());
             let out_path = new_path_components.clone().fold(
-                PathBuf::from(&stage.build.build_dir),
+                PathBuf::from(&stage.build.build_dir.join("objects")),
                 |mut path, comp| {
                     path.push(comp);
                     path

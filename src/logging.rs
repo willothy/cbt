@@ -37,3 +37,13 @@ macro_rules! warning {
         console::style(format!($fmt_str, $($arg)*)).bold().yellow()
     };
 }
+
+#[macro_export]
+macro_rules! bold {
+    ($fmt_str:literal) => {
+        console::style(format!($fmt_str)).bold()
+    };
+    ($fmt_str:literal, $($arg:tt)*) => {
+        console::style(format!($fmt_str, $($arg)*)).bold()
+    };
+}
